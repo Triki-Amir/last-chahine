@@ -25,16 +25,27 @@ class MyFactoryScreen extends StatefulWidget {
 class _MyFactoryScreenState extends State<MyFactoryScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   
-  // NILM prediction state
+  // Configuration constants
+  static const double _anomalyProbability = 0.15; // 15% chance of anomaly in mock data
+  static const double _lowRiskThreshold = 0.05;   // Reconstruction error threshold for low risk
+  static const double _mediumRiskThreshold = 0.1;  // Reconstruction error threshold for medium risk
+  
+  // NILM prediction state (Model 1)
   Map<String, double>? _nilmPredictions;
   bool _isLoadingPredictions = false;
   String? _predictionError;
+  
+  // Model 2 (Predictive Maintenance) state
+  Map<String, Map<String, dynamic>>? _model2Predictions;
+  bool _isLoadingModel2 = false;
+  String? _model2Error;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _fetchNilmPredictions();
+    _fetchModel2Predictions();
   }
 
   @override
@@ -113,6 +124,184 @@ List<double> _generateMockAggregateSequence() {
         _isLoadingPredictions = false;
       });
     }
+  }
+
+  /// Generates mock sensor data for Model 2 (Predictive Maintenance)
+  /// Returns sensor values for: air_temperature, process_temperature, rotational_speed, torque, tool_wear
+  Map<String, dynamic> _generateMockSensorData(String machineKey) {
+    final random = Random();
+    
+    // Different sensor profiles for each machine type
+    switch (machineKey) {
+      case 'BA': // Battery Array - moderate temp, low speed
+        return {
+          'air_temperature': 295.0 + random.nextDouble() * 10,
+          'process_temperature': 305.0 + random.nextDouble() * 15,
+          'rotational_speed': 1200 + random.nextInt(300),
+          'torque': 25.0 + random.nextDouble() * 15,
+          'tool_wear': 50 + random.nextInt(100),
+          'type_H': 0,
+          'type_L': 1,
+          'type_M': 0,
+        };
+      case 'CHP': // Combined Heat & Power - high temp, high torque
+        return {
+          'air_temperature': 305.0 + random.nextDouble() * 15,
+          'process_temperature': 320.0 + random.nextDouble() * 20,
+          'rotational_speed': 1800 + random.nextInt(400),
+          'torque': 50.0 + random.nextDouble() * 20,
+          'tool_wear': 80 + random.nextInt(120),
+          'type_H': 1,
+          'type_L': 0,
+          'type_M': 0,
+        };
+      case 'CS': // Charging Station - moderate profile
+        return {
+          'air_temperature': 298.0 + random.nextDouble() * 8,
+          'process_temperature': 308.0 + random.nextDouble() * 12,
+          'rotational_speed': 1400 + random.nextInt(300),
+          'torque': 35.0 + random.nextDouble() * 15,
+          'tool_wear': 40 + random.nextInt(80),
+          'type_H': 0,
+          'type_L': 0,
+          'type_M': 1,
+        };
+      case 'EVSE': // Electric Vehicle Supply - variable load
+        return {
+          'air_temperature': 300.0 + random.nextDouble() * 12,
+          'process_temperature': 312.0 + random.nextDouble() * 15,
+          'rotational_speed': 1500 + random.nextInt(500),
+          'torque': 40.0 + random.nextDouble() * 20,
+          'tool_wear': 60 + random.nextInt(100),
+          'type_H': 0,
+          'type_L': 0,
+          'type_M': 1,
+        };
+      case 'PV': // Photovoltaic System - low stress profile
+        return {
+          'air_temperature': 292.0 + random.nextDouble() * 6,
+          'process_temperature': 302.0 + random.nextDouble() * 10,
+          'rotational_speed': 1000 + random.nextInt(200),
+          'torque': 20.0 + random.nextDouble() * 10,
+          'tool_wear': 30 + random.nextInt(60),
+          'type_H': 0,
+          'type_L': 1,
+          'type_M': 0,
+        };
+      default:
+        return {
+          'air_temperature': 300.0,
+          'process_temperature': 310.0,
+          'rotational_speed': 1500,
+          'torque': 40.0,
+          'tool_wear': 100,
+          'type_H': 0,
+          'type_L': 1,
+          'type_M': 0,
+        };
+    }
+  }
+
+  /// Fetches Model 2 (Predictive Maintenance) predictions for all machines
+  Future<void> _fetchModel2Predictions() async {
+    if (_isLoadingModel2) return;
+    
+    setState(() {
+      _isLoadingModel2 = true;
+      _model2Error = null;
+    });
+    
+    final machines = ['BA', 'CHP', 'CS', 'EVSE', 'PV'];
+    final Map<String, Map<String, dynamic>> predictions = {};
+    
+    try {
+      for (final machine in machines) {
+        final sensorData = _generateMockSensorData(machine);
+        
+        try {
+          final response = await ApiService.getModel2Prediction(
+            airTemperature: sensorData['air_temperature'] as double,
+            processTemperature: sensorData['process_temperature'] as double,
+            rotationalSpeed: (sensorData['rotational_speed'] as int).toDouble(),
+            torque: sensorData['torque'] as double,
+            toolWear: (sensorData['tool_wear'] as int).toDouble(),
+            typeH: sensorData['type_H'] as int,
+            typeL: sensorData['type_L'] as int,
+            typeM: sensorData['type_M'] as int,
+          );
+          
+          if (response['success'] == true && response['data'] != null) {
+            final data = response['data'] as Map<String, dynamic>;
+            predictions[machine] = {
+              'isAnomaly': data['is_anomaly'] ?? false,
+              'failureType': data['predicted_failure_type'] ?? 'Unknown',
+              'confidence': data['confidence'] ?? '0%',
+              'probability': data['probability'] ?? 0.0,
+              'reconstructionError': data['reconstruction_error'] ?? 0.0,
+            };
+          }
+        } catch (e) {
+          // If individual machine fails, use mock data
+          predictions[machine] = _generateMockModel2Data(machine);
+        }
+      }
+      
+      setState(() {
+        _model2Predictions = predictions;
+        _isLoadingModel2 = false;
+      });
+    } catch (e) {
+      // If all fails, generate mock data for all machines
+      for (final machine in machines) {
+        predictions[machine] = _generateMockModel2Data(machine);
+      }
+      setState(() {
+        _model2Predictions = predictions;
+        _model2Error = 'Using simulated data (API unavailable)';
+        _isLoadingModel2 = false;
+      });
+    }
+  }
+
+  /// Generates mock Model 2 data when API is unavailable
+  Map<String, dynamic> _generateMockModel2Data(String machineKey) {
+    final random = Random();
+    
+    // Different failure profiles for each machine
+    final failureTypes = [
+      'No Failure',
+      'Heat Dissipation Failure',
+      'Power Failure',
+      'Overstrain Failure',
+      'Tool Wear Failure',
+      'Random Failure',
+    ];
+    
+    // Probability of anomaly (using class constant)
+    final isAnomaly = random.nextDouble() < _anomalyProbability;
+    
+    String failureType;
+    double probability;
+    double reconstructionError;
+    
+    if (isAnomaly) {
+      // If anomaly, pick a failure type (not "No Failure")
+      failureType = failureTypes[1 + random.nextInt(failureTypes.length - 1)];
+      probability = 0.5 + random.nextDouble() * 0.4; // 50-90%
+      reconstructionError = _mediumRiskThreshold + 0.05 + random.nextDouble() * 0.3; // Above medium threshold
+    } else {
+      failureType = 'No Failure';
+      probability = 0.85 + random.nextDouble() * 0.14; // 85-99%
+      reconstructionError = random.nextDouble() * _lowRiskThreshold * 1.5; // Below low threshold mostly
+    }
+    
+    return {
+      'isAnomaly': isAnomaly,
+      'failureType': failureType,
+      'confidence': '${(probability * 100).toStringAsFixed(1)}%',
+      'probability': probability,
+      'reconstructionError': reconstructionError,
+    };
   }
 
   @override
@@ -434,8 +623,8 @@ List<double> _generateMockAggregateSequence() {
       'PV': {'fullName': 'Photovoltaic System', 'color': Colors.yellow, 'icon': Icons.wb_sunny},
     };
     
-    // Handle loading state
-    if (_isLoadingPredictions) {
+    // Handle loading state - show loader if either model is still loading
+    if (_isLoadingPredictions || _isLoadingModel2) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -443,7 +632,7 @@ List<double> _generateMockAggregateSequence() {
             CircularProgressIndicator(color: Colors.blue),
             SizedBox(height: 16),
             Text(
-              'Loading machine data from AI model...',
+              'Loading machine data from AI models...',
               style: TextStyle(color: Colors.grey),
             ),
           ],
@@ -452,7 +641,7 @@ List<double> _generateMockAggregateSequence() {
     }
     
     // Handle error state
-    if (_predictionError != null) {
+    if (_predictionError != null && _nilmPredictions == null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -474,7 +663,10 @@ List<double> _generateMockAggregateSequence() {
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: _fetchNilmPredictions,
+              onPressed: () {
+                _fetchNilmPredictions();
+                _fetchModel2Predictions();
+              },
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
               style: ElevatedButton.styleFrom(
@@ -519,12 +711,25 @@ List<double> _generateMockAggregateSequence() {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'AI-Powered Analysis',
-              style: TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'AI-Powered Analysis',
+                  style: TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                if (_model2Error != null)
+                  Text(
+                    _model2Error!,
+                    style: const TextStyle(color: Colors.amber, fontSize: 10),
+                  ),
+              ],
             ),
             IconButton(
-              onPressed: _fetchNilmPredictions,
+              onPressed: () {
+                _fetchNilmPredictions();
+                _fetchModel2Predictions();
+              },
               icon: const Icon(Icons.refresh, color: Colors.blue, size: 20),
               tooltip: 'Refresh predictions',
             ),
@@ -616,6 +821,27 @@ List<double> _generateMockAggregateSequence() {
               ? (consumption / totalConsumption * 100) 
               : 0.0;
           
+          // Get Model 2 data for this machine
+          final model2Data = _model2Predictions?[key];
+          final isAnomaly = model2Data?['isAnomaly'] as bool? ?? false;
+          final failureType = model2Data?['failureType'] as String? ?? 'Loading...';
+          final confidence = model2Data?['confidence'] as String? ?? '--';
+          final reconstructionError = model2Data?['reconstructionError'] as double? ?? 0.0;
+          
+          // Calculate risk level based on reconstruction error thresholds
+          String riskLevel;
+          Color riskColor;
+          if (reconstructionError < _lowRiskThreshold) {
+            riskLevel = 'Low';
+            riskColor = Colors.green;
+          } else if (reconstructionError < _mediumRiskThreshold) {
+            riskLevel = 'Medium';
+            riskColor = Colors.amber;
+          } else {
+            riskLevel = 'High';
+            riskColor = Colors.red;
+          }
+          
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Card(
@@ -624,6 +850,7 @@ List<double> _generateMockAggregateSequence() {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
+                    // Machine header row with energy info
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -699,6 +926,7 @@ List<double> _generateMockAggregateSequence() {
                       ],
                     ),
                     const SizedBox(height: 12),
+                    // Energy progress bar
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
@@ -706,6 +934,109 @@ List<double> _generateMockAggregateSequence() {
                         minHeight: 6,
                         backgroundColor: Colors.grey.shade700,
                         valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    ),
+                    // Model 2: Predictive Maintenance Info
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isAnomaly 
+                            ? Colors.red.withOpacity(0.1) 
+                            : Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isAnomaly 
+                              ? Colors.red.withOpacity(0.3) 
+                              : Colors.green.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          // Status row
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    isAnomaly ? Icons.warning_amber_rounded : Icons.check_circle,
+                                    color: isAnomaly ? Colors.red : Colors.green,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    isAnomaly ? 'At Risk' : 'Normal',
+                                    style: TextStyle(
+                                      color: isAnomaly ? Colors.red : Colors.green,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: riskColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Risk: $riskLevel',
+                                  style: TextStyle(
+                                    color: riskColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Failure type and confidence
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Prediction',
+                                      style: TextStyle(color: Colors.grey, fontSize: 9),
+                                    ),
+                                    Text(
+                                      failureType,
+                                      style: TextStyle(
+                                        color: isAnomaly ? Colors.amber : Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  const Text(
+                                    'Confidence',
+                                    style: TextStyle(color: Colors.grey, fontSize: 9),
+                                  ),
+                                  Text(
+                                    confidence,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],

@@ -18,6 +18,13 @@ class ApiConfig {
     defaultValue: 'http://localhost:3001',
   );
   
+  /// Base URL for the Predictive Maintenance Model 2 API
+  /// For development: http://localhost:3002 (Express gateway to Flask at 5002)
+  static String model2ApiBaseUrl = const String.fromEnvironment(
+    'MODEL2_API_BASE_URL',
+    defaultValue: 'http://localhost:3002',
+  );
+  
   /// Placeholder for open trades (no specific buyer/seller)
   static const String openTradeMarker = 'OPEN';
 }
@@ -245,6 +252,37 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'aggregate_sequence': aggregateSequence,
+      }),
+    );
+    return _handleResponse(response);
+  }
+
+  /// Get Model 2 (Predictive Maintenance) predictions for a machine
+  /// POST /api/predict
+  /// Body: { air_temperature, process_temperature, rotational_speed, torque, tool_wear, type_H, type_L, type_M }
+  /// Returns: { predicted_failure_type, confidence, probability, reconstruction_error, is_anomaly }
+  static Future<Map<String, dynamic>> getModel2Prediction({
+    required double airTemperature,
+    required double processTemperature,
+    required double rotationalSpeed,
+    required double torque,
+    required double toolWear,
+    required int typeH,
+    required int typeL,
+    required int typeM,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.model2ApiBaseUrl}/api/predict'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'air_temperature': airTemperature,
+        'process_temperature': processTemperature,
+        'rotational_speed': rotationalSpeed,
+        'torque': torque,
+        'tool_wear': toolWear,
+        'type_H': typeH,
+        'type_L': typeL,
+        'type_M': typeM,
       }),
     );
     return _handleResponse(response);
