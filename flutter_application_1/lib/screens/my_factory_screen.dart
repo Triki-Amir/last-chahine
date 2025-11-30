@@ -25,6 +25,11 @@ class MyFactoryScreen extends StatefulWidget {
 class _MyFactoryScreenState extends State<MyFactoryScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   
+  // Configuration constants
+  static const double _anomalyProbability = 0.15; // 15% chance of anomaly in mock data
+  static const double _lowRiskThreshold = 0.05;   // Reconstruction error threshold for low risk
+  static const double _mediumRiskThreshold = 0.1;  // Reconstruction error threshold for medium risk
+  
   // NILM prediction state (Model 1)
   Map<String, double>? _nilmPredictions;
   bool _isLoadingPredictions = false;
@@ -272,8 +277,8 @@ List<double> _generateMockAggregateSequence() {
       'Random Failure',
     ];
     
-    // Probability of anomaly varies by machine type
-    final isAnomaly = random.nextDouble() < 0.15; // 15% chance of anomaly
+    // Probability of anomaly (using class constant)
+    final isAnomaly = random.nextDouble() < _anomalyProbability;
     
     String failureType;
     double probability;
@@ -283,11 +288,11 @@ List<double> _generateMockAggregateSequence() {
       // If anomaly, pick a failure type (not "No Failure")
       failureType = failureTypes[1 + random.nextInt(failureTypes.length - 1)];
       probability = 0.5 + random.nextDouble() * 0.4; // 50-90%
-      reconstructionError = 0.15 + random.nextDouble() * 0.3; // Above threshold
+      reconstructionError = _mediumRiskThreshold + 0.05 + random.nextDouble() * 0.3; // Above medium threshold
     } else {
       failureType = 'No Failure';
       probability = 0.85 + random.nextDouble() * 0.14; // 85-99%
-      reconstructionError = random.nextDouble() * 0.08; // Below threshold
+      reconstructionError = random.nextDouble() * _lowRiskThreshold * 1.5; // Below low threshold mostly
     }
     
     return {
@@ -618,8 +623,8 @@ List<double> _generateMockAggregateSequence() {
       'PV': {'fullName': 'Photovoltaic System', 'color': Colors.yellow, 'icon': Icons.wb_sunny},
     };
     
-    // Handle loading state
-    if (_isLoadingPredictions && _isLoadingModel2) {
+    // Handle loading state - show loader if either model is still loading
+    if (_isLoadingPredictions || _isLoadingModel2) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -823,13 +828,13 @@ List<double> _generateMockAggregateSequence() {
           final confidence = model2Data?['confidence'] as String? ?? '--';
           final reconstructionError = model2Data?['reconstructionError'] as double? ?? 0.0;
           
-          // Calculate risk level based on reconstruction error
+          // Calculate risk level based on reconstruction error thresholds
           String riskLevel;
           Color riskColor;
-          if (reconstructionError < 0.05) {
+          if (reconstructionError < _lowRiskThreshold) {
             riskLevel = 'Low';
             riskColor = Colors.green;
-          } else if (reconstructionError < 0.1) {
+          } else if (reconstructionError < _mediumRiskThreshold) {
             riskLevel = 'Medium';
             riskColor = Colors.amber;
           } else {
